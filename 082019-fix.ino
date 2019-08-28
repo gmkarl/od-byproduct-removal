@@ -3,6 +3,13 @@
 
 RTClib RTC;
 
+// Goal: Over a 60 second loop:
+//		pump1 turns on at 0 seconds
+//		pump2 turns on at 2 seconds
+//		both turn off at 10 seconds
+// Assumption: setting P1B high activates pump1
+//             setting P2A high activates pump2
+
 // *** CONSTANTS *** //
 const byte ODSensor = A14;
 const byte ODSensorVCC = 51;
@@ -22,16 +29,16 @@ const byte P2PWM = 45;
 // *** VARIABLES *** //
 bool ODPump1State = LOW;
 bool ODPump2State = LOW;
-unsigned long previousMillisPump1 = 0;
-unsigned long previousMillisPump2 = 0;
-unsigned long nMillisTimer = 0;
+unsigned long lastMillis = 0;
+unsigned long pumpCycleMillis = 0;
 
 
 // must be long to prevent overflow
-const unsigned long ODPump1INTERVAL = 30000; // (60sec) time between starting
-const unsigned long ODPump1RunTime = 10000;  // 10sec run time
-const unsigned long ODPump2INTERVAL = 12000; // (12sec) time between starting
-const unsigned long ODPump2RunTime = 8000;   // 8sec run time
+const unsigned long ODPump1StartTime = 0; // activate at start of run cycle
+const unsigned long ODPump2StartTime = 2000; // 2sec into run cycle
+const unsigned long ODPump1StopTime = 10000;  // 10sec run time
+const unsigned long ODPump2StopTime = 10000;   // 8sec run time
+const unsigned long ODPumpCyclePeriod = 60000; // restart cycle after 60sec
 
 
 void setup()
@@ -68,24 +75,49 @@ void setup()
 
 void loop()
 {
-  DateTime now = RTC.now();
+  DateTime now = RTC.now(); // not used yet
+
   unsigned long currentMillis = millis();
+  pumpCycleMillis += currentMillis - lastMillis; // prevents 50-day overflow by taking difference
+  lastMillis = currentMillis;
 
-  if (currentMillis - previousMillisPump1 > ODPump1INTERVAL)
+  if (pumpCycleMillis >= ODPump1StartTime && pumpCycleMillis < ODPump1StopTime)
   {
-    //store the time of this change
-    previousMillisPump1 += ODPump1INTERVAL;
-    ODPump1State = !ODPump1State; // Toggle
-    digitalWrite(P1B, ODPump1State);
-
+    // we are in a time window where PUMP1 should be RUNNING
+    if (ODPump1State != HIGH)
+    {
+      ODPump1State = LOW;
+      digitalWrite(P1B, ODPump1State);
+    } 
+  } else {
+    // we are in a time window where PUMP1 should be DISABLED
+    if (ODPump1State != LOW)
+    {
+      ODPump1State = HIGH;
+      digitalWrite(P1B, ODPump1State);
+    } 
   }
 
-  //if (previousMillisPump1 - currentMillis > ODPump2INTERVAL) {
-  // if (currentMillis - previousMillisPump1 > ODPump2INTERVAL) {
-  if (currentMillis - previousMillisPump2 > ODPump2INTERVAL) {
-    previousMillisPump2 += ODPump2INTERVAL;
-    ODPump2State = !ODPump2State;  // Toggle
-    digitalWrite (P2A, ODPump2State);
+  if (pumpCycleMillis >= ODPump2StartTime && pumpCycleMillis < ODPump2StopTime)
+  {
+    // we are in a time window where PUMP2 should be RUNNING
+    if (ODPump2State != HIGH)
+    {
+      ODPump2State = LOW;
+      digitalWrite(P2A, ODPump2State);
+    } 
+  } else {
+    // we are in a time window where PUMP2 should be DISABLED
+    if (ODPump2State != LOW)
+    {
+      ODPump2State = HIGH;
+      digitalWrite(P2A, ODPump2State);
+    } 
   }
 
+  // restart after the period is over
+  if (pumpCycleMillis >= ODPumpCyclePeriod)
+  {
+    pumpCycleMillis -= ODPumpCyclePeriod;
+  }
 }
